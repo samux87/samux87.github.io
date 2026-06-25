@@ -2,7 +2,21 @@ async function loadBibtex() {
     const response = await fetch("assets/pubs.bib");
     const bibText = await response.text();
 
-    const publications = parseBibtex(bibText);
+    const parsed = bibtexParse.toJSON(bibText);
+
+    const publications = parsed.map(entry => {
+        const f = entry.entryTags;
+
+        return {
+            type: entry.entryType,
+            key: entry.citationKey,
+            title: cleanLatex(f.title),
+            year: parseInt(f.year || "0"),
+            journal: cleanLatex(f.journal || f.booktitle || ""),
+            authors: formatAuthors(f.author || "")
+        };
+    }).sort((a, b) => b.year - a.year);
+
     renderPublications(publications);
 }
 
@@ -70,38 +84,20 @@ function renderPublications(pubs) {
 
 function cleanLatex(str = "") {
     return str
-        // \'{a}, \`{e}, ecc.
-        .replace(/\\['"`^~=.]{1}\s*\\?{?([a-zA-Z])}?/g, (_, c) => {
-            const map = {
-                a: "á", e: "é", i: "í", o: "ó", u: "ú",
-                A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú",
-                n: "ñ", N: "Ñ",
-                c: "ć"
-            };
-            return map[c] || c;
-        })
+        // rimuove gruppi { }
+        .replace(/[{}]/g, "")
 
-        // \v{c}, \v{z}
-        .replace(/\\v\s*\\?{?([a-zA-Z])}?/g, (_, c) => {
-            const map = {
-                c: "č",
-                C: "Č",
-                z: "ž",
-                s: "š"
-            };
-            return map[c] || c;
-        })
+        // accenti base LaTeX -> Unicode (minimo utile)
+        .replace(/\\'e/g, "é")
+        .replace(/\\`e/g, "è")
+        .replace(/\\"o/g, "ö")
+        .replace(/\\"u/g, "ü")
+        .replace(/\\'a/g, "á")
 
-        // FIX CRUCIALE: V{\'\i}t → Vít
-        .replace(/\\i/g, "i")
-
-        // rimuove solo comandi residui (ma NON quelli già processati sopra)
+        // comandi residui
         .replace(/\\[a-zA-Z]+/g, "")
 
-        // pulizia finale
-        .replace(/[{}]/g, "")
         .replace(/\s+/g, " ")
-        .normalize("NFC")
         .trim();
 }
 
@@ -110,21 +106,15 @@ function formatAuthors(authorStr) {
 
     return authorStr
         .split(/\s+and\s+/i)
+        .map(a => cleanLatex(a))
         .map(a => {
-            a = cleanLatex(a);
-
-            // "Cognome, Nome"
             if (a.includes(",")) {
                 const [last, first] = a.split(",").map(s => s.trim());
                 return `${first} ${last}`;
             }
-
             return a;
         })
-        .filter(Boolean)
-        .join(", ")
-        .replace(/\s+/g, " ")
-        .trim();
+        .join(", ");
 }
 
 loadBibtex();
