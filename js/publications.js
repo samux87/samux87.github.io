@@ -6,7 +6,6 @@ async function loadBibtex() {
     renderPublications(publications);
 }
 
-// Simple BibTeX parser (sufficient for Google Scholar export)
 function parseBibtex(bib) {
     const entries = bib.split("@").slice(1);
     const results = [];
@@ -15,14 +14,26 @@ function parseBibtex(bib) {
         const type = entry.split("{")[0].trim();
         const body = entry.substring(entry.indexOf("{") + 1);
 
-        const key = body.split(",")[0];
-        const fields = body.substring(body.indexOf(",") + 1);
+        const key = body.split(",")[0]?.trim();
+        const fieldsBlock = body.substring(body.indexOf(",") + 1);
 
-        const getField = (field) => {
-            const regex = new RegExp(field + "\\s*=\\s*[\\{\\\"](.*?)[\\}\\\"],", "i");
-            const match = fields.match(regex);
-            return match ? match[1] : "";
-        };
+        function getField(field) {
+            // cattura anche multilinea e blocchi con {}
+            const regex = new RegExp(
+                field + "\\s*=\\s*(\\{[\\s\\S]*?\\}|\\\"[\\s\\S]*?\\\")\\s*,?",
+                "i"
+            );
+
+            const match = fieldsBlock.match(regex);
+            if (!match) return "";
+
+            let value = match[1];
+
+            // rimuove wrapper { } o " "
+            value = value.replace(/^\\{|\\}$/g, "").replace(/^"|"$/g, "");
+
+            return cleanLatex(value);
+        }
 
         results.push({
             type,
@@ -30,7 +41,7 @@ function parseBibtex(bib) {
             title: getField("title"),
             year: getField("year"),
             journal: getField("journal") || getField("booktitle"),
-            authors: formatAuthors(getField("author")).replace(/\s+/g, " ").trim(),
+            authors: formatAuthors(getField("author"))
         });
     });
 
@@ -59,8 +70,8 @@ function renderPublications(pubs) {
 
 function cleanLatex(str = "") {
     return str
-        // 1. gestisce \v{c} \'{e} ecc.
-        .replace(/\\[\'"`^~=.]{1}\s*{?([a-zA-Z])}?/g, (_, c) => {
+        // \'{a}, \`{e}, ecc.
+        .replace(/\\['"`^~=.]{1}\s*\\?{?([a-zA-Z])}?/g, (_, c) => {
             const map = {
                 a: "á", e: "é", i: "í", o: "ó", u: "ú",
                 A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú",
@@ -70,8 +81,8 @@ function cleanLatex(str = "") {
             return map[c] || c;
         })
 
-        // 2. \v{c}, \u{g} ecc.
-        .replace(/\\v\s*{?([a-zA-Z])}?/g, (_, c) => {
+        // \v{c}, \v{z}
+        .replace(/\\v\s*\\?{?([a-zA-Z])}?/g, (_, c) => {
             const map = {
                 c: "č",
                 C: "Č",
@@ -81,18 +92,16 @@ function cleanLatex(str = "") {
             return map[c] || c;
         })
 
-        // 3. casi tipo \i, \j (dotless / broken latex export)
-        .replace(/\\[a-zA-Z]+\s*/g, "")
+        // FIX CRUCIALE: V{\'\i}t → Vít
+        .replace(/\\i/g, "i")
 
-        // 4. rimuove graffe residue
+        // rimuove solo comandi residui (ma NON quelli già processati sopra)
+        .replace(/\\[a-zA-Z]+/g, "")
+
+        // pulizia finale
         .replace(/[{}]/g, "")
-
-        // 5. compatta spazi
         .replace(/\s+/g, " ")
-
-        // 6. fix unicode finale
         .normalize("NFC")
-
         .trim();
 }
 
@@ -104,7 +113,7 @@ function formatAuthors(authorStr) {
         .map(a => {
             a = cleanLatex(a);
 
-            // caso "Cognome, Nome"
+            // "Cognome, Nome"
             if (a.includes(",")) {
                 const [last, first] = a.split(",").map(s => s.trim());
                 return `${first} ${last}`;
@@ -112,7 +121,10 @@ function formatAuthors(authorStr) {
 
             return a;
         })
-        .join(", ");
+        .filter(Boolean)
+        .join(", ")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 loadBibtex();
