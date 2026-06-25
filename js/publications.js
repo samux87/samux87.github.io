@@ -30,7 +30,7 @@ function parseBibtex(bib) {
             title: getField("title"),
             year: getField("year"),
             journal: getField("journal") || getField("booktitle"),
-            authors: formatAuthors(getField("author")),
+            authors: formatAuthors(getField("author")).replace(/\s+/g, " ").trim(),
         });
     });
 
@@ -57,17 +57,42 @@ function renderPublications(pubs) {
     });
 }
 
-function cleanLatex(str) {
+function cleanLatex(str = "") {
     return str
-        // rimuove wrapper {...}
+        // 1. gestisce \v{c} \'{e} ecc.
+        .replace(/\\[\'"`^~=.]{1}\s*{?([a-zA-Z])}?/g, (_, c) => {
+            const map = {
+                a: "á", e: "é", i: "í", o: "ó", u: "ú",
+                A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú",
+                n: "ñ", N: "Ñ",
+                c: "ć"
+            };
+            return map[c] || c;
+        })
+
+        // 2. \v{c}, \u{g} ecc.
+        .replace(/\\v\s*{?([a-zA-Z])}?/g, (_, c) => {
+            const map = {
+                c: "č",
+                C: "Č",
+                z: "ž",
+                s: "š"
+            };
+            return map[c] || c;
+        })
+
+        // 3. casi tipo \i, \j (dotless / broken latex export)
+        .replace(/\\[a-zA-Z]+\s*/g, "")
+
+        // 4. rimuove graffe residue
         .replace(/[{}]/g, "")
-        // accenti comuni BibTeX
-        .replace(/\\['"`^~=.]/g, "")
-        // combinazioni tipo {\v{c}} -> c
-        .replace(/\\v\s*{([^}])}/g, "$1")
-        .replace(/\\[a-zA-Z]+\s*{([^}])}/g, "$1")
-        // cleanup spazi doppi
+
+        // 5. compatta spazi
         .replace(/\s+/g, " ")
+
+        // 6. fix unicode finale
+        .normalize("NFC")
+
         .trim();
 }
 
@@ -75,7 +100,7 @@ function formatAuthors(authorStr) {
     if (!authorStr) return "";
 
     return authorStr
-        .split(" and ")
+        .split(/\s+and\s+/i)
         .map(a => {
             a = cleanLatex(a);
 
